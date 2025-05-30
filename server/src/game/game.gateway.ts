@@ -1,3 +1,4 @@
+import { UsePipes, ValidationPipe } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -7,9 +8,12 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { RoomsService } from 'src/rooms/rooms.service';
+import { JoinRoomDto } from './dto/join-room.dto';
+import { MakeMoveDto } from './dto/make-move.dto';
 import { GameService } from './game.service';
 
 @WebSocketGateway()
+@UsePipes(new ValidationPipe({ whitelist: true }))
 export class GameGateway {
   @WebSocketServer()
   server: Server;
@@ -22,23 +26,23 @@ export class GameGateway {
   @SubscribeMessage('joinRoom')
   handleJoinRoom(
     @MessageBody()
-    data: { roomId: string; name: string },
+    dto: JoinRoomDto,
     @ConnectedSocket() client: Socket,
   ) {
     try {
       const newPlayer = {
-        name: data.name,
+        name: dto.name,
         id: client.id,
       };
 
       const { symbol } = this.roomsService.addPlayerToRoom(
-        data.roomId,
+        dto.roomId,
         newPlayer,
       );
-      client.join(data.roomId);
+      client.join(dto.roomId);
 
       // existing opponent in room
-      const opponent = this.roomsService.getOpponent(data.roomId, client.id);
+      const opponent = this.roomsService.getOpponent(dto.roomId, client.id);
 
       const opponentWithoutId = opponent
         ? {
@@ -53,19 +57,19 @@ export class GameGateway {
       });
 
       const newPlayerWithoutId = {
-        name: data.name,
+        name: dto.name,
         symbol: symbol,
       };
 
       // if oponnent exists in the room then notify him that a new player joined
       if (opponent) {
-        client.to(data.roomId).emit('opponentJoined', {
+        client.to(dto.roomId).emit('opponentJoined', {
           opponent: newPlayerWithoutId,
         });
 
         this.server
-          .to(data.roomId)
-          .emit('gameStarted', this.gameService.getGameState(data.roomId));
+          .to(dto.roomId)
+          .emit('gameStarted', this.gameService.getGameState(dto.roomId));
       }
     } catch (error) {
       client.emit('joinError', { message: error.message });
@@ -91,7 +95,7 @@ export class GameGateway {
 
   @SubscribeMessage('makeMove')
   handleMakeMove(
-    @MessageBody() data: { position: number },
+    @MessageBody() dto: MakeMoveDto,
     @ConnectedSocket() client: Socket,
   ) {
     try {
@@ -100,7 +104,7 @@ export class GameGateway {
       const updatedGameState = this.gameService.makeMove(
         roomId,
         client.id,
-        data.position,
+        dto.position,
       );
 
       this.server.to(roomId).emit('gameStateUpdated', updatedGameState);
