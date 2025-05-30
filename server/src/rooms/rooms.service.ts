@@ -1,10 +1,7 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { PlayerWithoutSymbol } from 'src/types';
-import { Player, PlayerSymbol, Room } from '../types';
+import { Injectable } from '@nestjs/common';
+import { WsException } from '@nestjs/websockets';
+import { PlayerSymbol, PlayerWithoutSymbol } from 'src/types';
+import { Room } from '../types';
 
 @Injectable()
 export class RoomsService {
@@ -12,7 +9,7 @@ export class RoomsService {
   private rooms: Map<string, Room> = new Map();
 
   createRoom() {
-    const roomId = 'test'; //uuidv4();
+    const roomId = 'test'; // uuidv4();
     const room: Room = {
       players: [],
       maxPlayers: this.MAX_PLAYERS,
@@ -29,32 +26,30 @@ export class RoomsService {
   getRoomById(roomId: string) {
     const room = this.rooms.get(roomId);
     if (!room) {
-      throw new NotFoundException('Room not found.');
+      throw new WsException('Room not found.');
     }
-
     return room;
   }
 
   isRoomFull(roomId: string) {
     const room = this.getRoomById(roomId);
-
     return room.players.length >= room.maxPlayers;
   }
 
   addPlayerToRoom(roomId: string, playerWithoutSymbol: PlayerWithoutSymbol) {
     const room = this.getRoomById(roomId);
 
-    if (this.isRoomFull(roomId)) {
-      throw new BadRequestException('Room is full.');
+    if (room.players.find((player) => player.id === playerWithoutSymbol.id)) {
+      throw new WsException('Player already joined the room.');
     }
 
-    if (room.players.find((player) => player.id === playerWithoutSymbol.id)) {
-      throw new BadRequestException('Player already joined the room.');
+    if (this.isRoomFull(roomId)) {
+      throw new WsException('Room is full.');
     }
 
     const symbol: PlayerSymbol = room.players[0]?.symbol === 'O' ? 'X' : 'O';
 
-    const player: Player = {
+    const player = {
       ...playerWithoutSymbol,
       symbol,
     };
@@ -64,10 +59,12 @@ export class RoomsService {
     return player;
   }
 
-  removePlayerFromRoom(roomId: string, playerId: string) {
+  removePlayerFromRoom(roomId: string, currentPlayerId: string) {
     const room = this.getRoomById(roomId);
 
-    room.players = room.players.filter((player) => player.id !== playerId);
+    room.players = room.players.filter(
+      (player) => player.id !== currentPlayerId,
+    );
   }
 
   deleteRoom(roomId: string) {
@@ -87,7 +84,7 @@ export class RoomsService {
     }));
   }
 
-  getRoomIdByPlayerId(playerId: string) {
+  getRoomIdByPlayerId(playerId: string): string {
     for (const [roomId, room] of this.rooms.entries()) {
       const isPlayerInRoom = room.players.some(
         (player) => player.id === playerId,
@@ -97,10 +94,25 @@ export class RoomsService {
         return roomId;
       }
     }
+    throw new WsException('Player not found in any room.');
   }
 
   getOpponent(roomId: string, currentPlayerId: string) {
     const players = this.getPlayers(roomId);
     return players.find((player) => player.id !== currentPlayerId);
+  }
+
+  getPlayer(roomId: string, currentPlayerId: string) {
+    const players = this.getPlayers(roomId);
+    const player = players.find((player) => player.id === currentPlayerId);
+    if (!player) {
+      throw new WsException('Player not found in room.');
+    }
+    return player;
+  }
+
+  isRoomEmpty(roomId: string) {
+    const players = this.getPlayers(roomId);
+    return players.length === 0;
   }
 }

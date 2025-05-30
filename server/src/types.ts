@@ -8,10 +8,14 @@ export interface Player {
 
 export type PlayerWithoutSymbol = Omit<Player, 'symbol'>;
 
+export type PlayerWithoutId = Omit<Player, 'id'>;
+
+export type Board = (PlayerSymbol | null)[];
+
 export interface GameState {
-  board: (PlayerSymbol | null)[];
+  board: Board;
   currentTurn: PlayerSymbol;
-  winner: Player | 'draw' | null;
+  winner: PlayerWithoutId | 'draw' | null;
 }
 
 export interface Room {

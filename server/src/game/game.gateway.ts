@@ -7,16 +7,20 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { RoomsService } from 'src/rooms/rooms.service';
+import { GameService } from './game.service';
 
 @WebSocketGateway()
 export class GameGateway {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly roomsService: RoomsService) {}
+  constructor(
+    private readonly roomsService: RoomsService,
+    private readonly gameService: GameService,
+  ) {}
 
   @SubscribeMessage('joinRoom')
-  async handleJoinRoom(
+  handleJoinRoom(
     @MessageBody()
     data: { roomId: string; name: string },
     @ConnectedSocket() client: Socket,
@@ -58,6 +62,10 @@ export class GameGateway {
         client.to(data.roomId).emit('opponentJoined', {
           opponent: newPlayerWithoutId,
         });
+
+        this.server
+          .to(data.roomId)
+          .emit('gameStarted', this.gameService.getGameState(data.roomId));
       }
     } catch (error) {
       client.emit('joinError', { message: error.message });
@@ -71,10 +79,33 @@ export class GameGateway {
       this.roomsService.removePlayerFromRoom(roomId, client.id);
       client.to(roomId).emit('opponentLeft');
 
-      const room = this.roomsService.getRoomById(roomId);
-      if (room.players.length === 0) {
+      if (this.roomsService.isRoomEmpty(roomId)) {
         this.roomsService.deleteRoom(roomId);
       }
+
+      const gameState = this.gameService.resetGameByRoomId(roomId);
+
+      this.server.to(roomId).emit('gameStateUpdated', gameState);
+    }
+  }
+
+  @SubscribeMessage('makeMove')
+  handleMakeMove(
+    @MessageBody() data: { position: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const roomId = this.roomsService.getRoomIdByPlayerId(client.id);
+
+      const updatedGameState = this.gameService.makeMove(
+        roomId,
+        client.id,
+        data.position,
+      );
+
+      this.server.to(roomId).emit('gameStateUpdated', updatedGameState);
+    } catch (error) {
+      client.emit('makeMoveError', { message: error.message });
     }
   }
 }
