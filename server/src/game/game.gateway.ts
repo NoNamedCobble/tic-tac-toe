@@ -12,7 +12,12 @@ import { JoinRoomDto } from './dto/join-room.dto';
 import { MakeMoveDto } from './dto/make-move.dto';
 import { GameService } from './game.service';
 
-@WebSocketGateway()
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
+})
 @UsePipes(new ValidationPipe({ whitelist: true }))
 export class GameGateway {
   @WebSocketServer()
@@ -77,19 +82,22 @@ export class GameGateway {
   }
 
   handleDisconnect(client: Socket) {
-    const roomId = this.roomsService.getRoomIdByPlayerId(client.id);
+    try {
+      const roomId = this.roomsService.getRoomIdByPlayerId(client.id);
 
-    if (roomId) {
-      this.roomsService.removePlayerFromRoom(roomId, client.id);
-      client.to(roomId).emit('opponentLeft');
+      if (roomId) {
+        this.roomsService.removePlayerFromRoom(roomId, client.id);
+        client.to(roomId).emit('opponentLeft');
 
-      if (this.roomsService.isRoomEmpty(roomId)) {
-        this.roomsService.deleteRoom(roomId);
+        const gameState = this.gameService.resetGameByRoomId(roomId);
+        if (this.roomsService.isRoomEmpty(roomId)) {
+          this.roomsService.deleteRoom(roomId);
+        }
+
+        this.server.to(roomId).emit('gameStateUpdated', gameState);
       }
-
-      const gameState = this.gameService.resetGameByRoomId(roomId);
-
-      this.server.to(roomId).emit('gameStateUpdated', gameState);
+    } catch (error) {
+      console.log('disconnectError', error);
     }
   }
 
